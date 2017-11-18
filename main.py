@@ -44,14 +44,12 @@ def main():
                     test_mb = test_mb.reshape([batch_size, height, width, channel])
                     test_mb = (np.random.uniform(size=test_mb.shape) < test_mb).astype('float32')
                     test_cost = sess.run(pixel_rnn.loss, feed_dict={pixel_rnn.inputs:test_mb})
-                    print("Epoch: %d, iteration:%d, train l: %f, test:_l: %f" % (epoch, idx, cost, test_cost))
+                    print("Epoch: %d, iteration:%d, train loss: %f, test loss: %f" % (epoch, idx, cost, test_cost))
 
                     if idx % 100 == 0:
                         avg_train_cost = np.mean(total_train_costs)
                         #print("Epoch: %d, iteration:%d, train l: %f" % (epoch, idx, cost))
                         #print("Epoch: %d, iteration:%d, train l: %f" % (epoch, idx, avg_train_cost))
-                        #print('grads:', grads)
-                        #print('new_grads:', new_grads)
                         samples = pixel_rnn.generate()
                         helper.save_images(samples, height, width, 10, 10, dir=out_dir, prefix='test_')
                 avg_train_cost = np.mean(total_train_costs)

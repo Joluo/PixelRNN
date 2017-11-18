@@ -39,7 +39,7 @@ class PixelRNN:
         self.loss = tf.reduce_mean(-(tf.multiply(self.inputs, tf.log(self.output)) + tf.multiply(1-self.inputs, tf.log(1-self.output))))
 
         #optimizer = tf.train.RMSPropOptimizer(1e-3)
-        optimizer = tf.train.AdamOptimizer(1e-3)
+        optimizer = tf.train.AdamOptimizer(5e-3)
         self.grads_and_vars = optimizer.compute_gradients(self.loss)
 
         self.new_grads_and_vars = \
