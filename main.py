@@ -15,7 +15,7 @@ import helper
 def main():
     out_dir = './out'
     helper.check_and_create_dir(out_dir)
-    batch_size = 64
+    batch_size = 100
     from tensorflow.examples.tutorials.mnist import input_data
     mnist = input_data.read_data_sets('../MNIST_data', one_hot=True)
     train_step_per_epoch = mnist.train.num_examples / batch_size
@@ -29,7 +29,7 @@ def main():
         session_conf.gpu_options.allow_growth = True
         sess = tf.Session(config=session_conf) 
         with sess.as_default(), tf.device('/gpu:0'):
-            pixel_rnn = PixelRNN(sess, 28, 28, 1, 32, 1., 'pixel_rnn')
+            pixel_rnn = PixelRNN(sess, 28, 28, 1, 64, 1., 'pixel_rnn')
             sess.run(tf.global_variables_initializer())
 
             for epoch in range(100000):

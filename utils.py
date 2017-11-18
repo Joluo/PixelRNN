@@ -50,9 +50,10 @@ def conv2d(inputs, input_dim, output_dim, filter_size, mask_type=None, scope='co
             mask = np.ones(filter_shape, dtype=np.float32)
             center = filter_size // 2
             mask[center, center+1:, :, :] = 0.
+            mask[center+1:, :, :, :] = 0.
             if mask_type == 'a':
                 mask[center, center, :, :] = 0.
-            filter_w *= tf.constant(mask, dtype=tf.float32)
+            filter_w = tf.multiply(filter_w, mask)
 
         print(scope+'_inputs:', inputs.shape)
         outputs = tf.nn.conv2d(inputs, filter_w, [1,1,1,1], padding='SAME', name = 'conv_weights')
