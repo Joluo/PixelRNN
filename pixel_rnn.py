@@ -1,135 +1,61 @@
 import tensorflow as tf
-from logging import getLogger
+from utils import *
 
-from ops import *
-
-logger = getLogger(__name__)
 
 class PixelRNN:
-    def __init__(self, sess, conf, height, width, channel):
-        logger.info("Building %s starts!" % conf.model)
-
+    def __init__(self, sess, height, width, channel, hidden_dim, grad_clip, model):
         self.sess = sess
-        self.data = conf.data
-        self.height, self.width, self.channel = height, width, channel
+        self.height = height
+        self.width = width
+        self.channel = channel
+        self.hidden_dim = hidden_dim
+        self.grad_clip = grad_clip
+        self.model = model
+        
+        self.inputs = tf.placeholder(tf.float32, [None, height, width, channel])
 
-        if conf.use_gpu:
-            data_format = "NHWC"
-        else:
-            data_format = "NCHW"
+        output = conv2d(self.inputs, self.channel, hidden_dim, 7, 'a', 'input_conv')
 
-        if data_format == "NHWC":
-            input_shape = [None, height, width, channel]
-        elif data_format == "NCHW":
-            input_shape = [None, channel, height, width]
-        else:
-            raise ValueError("Unknown data_format: %s" % data_format)
+        if self.model == 'pixel_rnn':
+            lstm1_output = diagonal_bilstm(output, hidden_dim, hidden_dim, 'LSTM1')
+            lstm2_output = diagonal_bilstm(lstm1_output, hidden_dim, hidden_dim, 'LSTM2')
+            output = lstm2_output
+        elif self.model == 'pixel_cnn':
+            #TODO
+            pass
 
-        self.l = {}
+        output = conv2d(output, hidden_dim, hidden_dim, 1, 'b', 'output_conv1', he_init=True)
+        output = tf.nn.relu(output)
+        
+        output = conv2d(output, hidden_dim, hidden_dim, 1, 'b', 'output_conv2', he_init=True)
+        output = tf.nn.relu(output)
 
-        self.l['inputs'] = tf.placeholder(tf.float32, [None, height, width, channel],)
+        logits = conv2d(output, hidden_dim, 1, 1, 'b', 'output_conv3')
+        self.output = tf.nn.sigmoid(logits)
 
-        if conf.data =='mnist':
-            self.l['normalized_inputs'] = self.l['inputs']
-        else:
-            self.l['normalized_inputs'] = tf.div(self.l['inputs'], 255., name="normalized_inputs")
+        #self.loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
+        #    logits=logits, labels=self.inputs, name='loss'))
+        #self.loss = tf.reduce_mean(tf.contrib.keras.metrics.binary_crossentropy(self.inputs, self.output))
+        self.loss = tf.reduce_mean(-(tf.multiply(self.inputs, tf.log(self.output)) + tf.multiply(1-self.inputs, tf.log(1-self.output))))
 
-        # input of main reccurent layers
-        scope = "conv_inputs"
-        logger.info("Building %s" % scope)
+        #optimizer = tf.train.RMSPropOptimizer(1e-3)
+        optimizer = tf.train.AdamOptimizer(1e-3)
+        self.grads_and_vars = optimizer.compute_gradients(self.loss)
 
-        if conf.use_residual and conf.model == "pixel_rnn":
-            self.l[scope] = conv2d(self.l['normalized_inputs'], conf.hidden_dims * 2, [7, 7], "A", scope=scope)
-        else:
-            self.l[scope] = conv2d(self.l['normalized_inputs'], conf.hidden_dims, [7, 7], "A", scope=scope)
+        self.new_grads_and_vars = \
+            [(tf.clip_by_value(gv[0], -self.grad_clip, self.grad_clip), gv[1]) for gv in self.grads_and_vars]
+        self.optim = optimizer.apply_gradients(self.new_grads_and_vars)
 
-        # main reccurent layers
-        l_hid = self.l[scope]
-        for idx in range(conf.recurrent_length):
-            if conf.model == "pixel_rnn":
-                scope = 'LSTM%d' % idx
-                self.l[scope] = l_hid = diagonal_bilstm(l_hid, conf, scope=scope)
-            elif conf.model == "pixel_cnn":
-                scope = 'CONV%d' % idx
-                self.l[scope] = l_hid = conv2d(l_hid, 3, [1, 1], "B", scope=scope)
-            else:
-                raise ValueError("wrong type of model: %s" % (conf.model))
-            logger.info("Building %s" % scope)
-
-        # output reccurent layers
-        for idx in range(conf.out_recurrent_length):
-            scope = 'CONV_OUT%d' % idx
-            self.l[scope] = l_hid = tf.nn.relu(conv2d(l_hid, conf.out_hidden_dims, [1, 1], "B", scope=scope))
-            logger.info("Building %s" % scope)
-
-        if channel == 1:
-            self.l['conv2d_out_logits'] = conv2d(l_hid, 1, [1, 1], "B", scope='conv2d_out_logits')
-            self.l['output'] = tf.nn.sigmoid(self.l['conv2d_out_logits'])
-
-            logger.info("Building loss and optims")
-            self.loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
-                logits=self.l['conv2d_out_logits'], labels=self.l['normalized_inputs'], name='loss'))
-        else:
-            raise ValueError("Implementation in progress for RGB colors")
-
-            COLOR_DIM = 256
-
-            self.l['conv2d_out_logits'] = conv2d(l_hid, COLOR_DIM, [1, 1], "B", scope='conv2d_out_logits')
-
-            self.l['conv2d_out_logits_flat'] = tf.reshape(
-                self.l['conv2d_out_logits'], [-1, self.height * self.width, COLOR_DIM])
-            self.l['normalized_inputs_flat'] = tf.reshape(
-                self.l['normalized_inputs'], [-1, self.height * self.width, COLOR_DIM])
-
-            pred_pixels = [tf.squeeze(pixel, axis=[1])
-                for pixel in tf.split(self.l['conv2d_out_logits_flat'], self.height * self.width, 1)]
-            target_pixels = [tf.squeeze(pixel, axis=[1])
-                for pixel in tf.split(self.l['normalized_inputs_flat'], self.height * self.width, 1)]
-
-            softmaxed_pixels = [tf.nn.softmax(pixel) for pixel in pred_pixels]
-
-            losses = [tf.nn.sampled_softmax_loss(
-                pred_pixel, tf.zeros_like(pred_pixel), pred_pixel, target_pixel, 1, COLOR_DIM) \
-                for pred_pixel, target_pixel in zip(pred_pixels, target_pixels)]
-
-            self.l['output'] = tf.nn.softmax(self.l['conv2d_out_logits'])
-
-            logger.info("Building loss and optims")
-            self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-                logits=self.l['conv2d_out_logits'], labels=self.l['normalized_inputs'], name='loss'))
-
-        optimizer = tf.train.RMSPropOptimizer(conf.learning_rate)
-        grads_and_vars = optimizer.compute_gradients(self.loss)
-
-        new_grads_and_vars = \
-            [(tf.clip_by_value(gv[0], -conf.grad_clip, conf.grad_clip), gv[1]) for gv in grads_and_vars]
-        self.optim = optimizer.apply_gradients(new_grads_and_vars)
-
-        #show_all_variables()
-
-        logger.info("Building %s finished!" % conf.model)
-
+        show_all_variables()
+        
     def predict(self, images):
-        return self.sess.run(self.l['output'], {self.l['inputs']: images})
-
-    def test(self, images, with_update=False):
-        if with_update:
-            _, cost = self.sess.run([
-                self.optim, self.loss,
-                ], feed_dict={ self.l['inputs']: images })
-        else:
-            cost = self.sess.run(self.loss, feed_dict={ self.l['inputs']: images })
-        return cost
+        return self.sess.run(self.output, {self.inputs: images})
 
     def generate(self):
         samples = np.zeros((100, self.height, self.width, 1), dtype='float32')
-
         for i in range(self.height):
             for j in range(self.width):
                 for k in range(self.channel):
-                    next_sample = self.predict(samples)
-                    next_sample = (np.random.uniform(size=next_sample.shape) < samples).astype('float32')
+                    next_sample = binarize(self.predict(samples))
                     samples[:, i, j, k] = next_sample[:, i, j, k]
-
         return samples
-

@@ -10,12 +10,12 @@ def get_timestamp():
 
 import scipy.misc
 def save_images(images, height, width, n_row, n_col,
-        cmin=0.0, cmax=1.0, dir="./"):
+        cmin=0.0, cmax=1.0, dir="./", prefix = ''):
     images = images.reshape((n_row, n_col, height, width))
     images = images.transpose(1, 2, 0, 3)
     images = images.reshape((height * n_row, width * n_col))
 
-    filename = '%s.jpg' % (get_timestamp())
+    filename = prefix + '%s.jpg' % (get_timestamp())
     scipy.misc.toimage(images, cmin=cmin, cmax=cmax).save(os.path.join(dir, filename))
 
 import os
