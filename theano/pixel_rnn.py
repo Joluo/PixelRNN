@@ -1,4 +1,5 @@
 """
+Copy from: https://github.com/igul222/pixel_rnn
 Pixel RNN on MNIST
 Ishaan Gulrajani
 """
