@@ -14,3 +14,10 @@ Theano:
 样例结果数据：
 
 ![](https://github.com/Joluo/PixelRNN/blob/master/samples.jpg)
+
+
+References:
+
+    ICML2016, Pixel Recurrent Neural Networks, Aaron van den Oord
+    
+    
